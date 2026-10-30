@@ -6,7 +6,7 @@
 
 - **フロントエンド**: Next.js (App Router) + React。AWS Amplify Hosting でホスティング
 - **認証**: Amplify Gen 2 による Amazon Cognito と、Amplify UI の `<Authenticator>`
-- **API + DB**: [AWS Blocks](https://github.com/aws-devtools-labs/aws-blocks)。Lambda + API Gateway 上の型付き RPC API で、DB は **Aurora Serverless v2 (PostgreSQL)**。スキーマは素の SQL マイグレーションで管理します
+- **API + DB**: [AWS Blocks](https://github.com/aws-devtools-labs/aws-blocks)。Lambda + API Gateway 上の型付き RPC API で、DB は **Aurora Serverless v2 (PostgreSQL)**。スキーマは素の SQL マイグレーションで管理し、クエリは [Kysely](https://kysely.dev)（クエリビルダー）で書きます
 
 サンプルはユーザーごとの Todo リストです。サインインしたユーザーには自分の行だけが見えます。
 
@@ -62,7 +62,8 @@ amplify/
   auth/resource.ts      Cognito の設定
   blocks.ts             AWS Blocks を Amplify に組み込む（CORS、Cognito 設定、outputs）
 aws-blocks/
-  index.ts              API（ApiNamespace）と Database
+  index.ts              API（ApiNamespace）と Kysely のクエリ
+  schema.ts             Kysely 用のテーブル型（マイグレーションと内容を揃える）
   auth.ts               Cognito ID トークンの検証
   migrations/*.sql      DB スキーマ（ファイル名順に適用）
   amplify-client.js     フロントエンド用クライアント: `import { api } from 'aws-blocks'`
@@ -74,7 +75,8 @@ app/                    Next.js App Router のページ
 
 ## カスタマイズ
 
-- **スキーマを変更する**: `aws-blocks/migrations/002_add_due_date.sql` のように、連番の新しいファイルを追加します。適用済みのマイグレーションは編集しないでください。
+- **スキーマを変更する**: `aws-blocks/migrations/002_add_due_date.sql` のように連番の新しいファイルを追加し、`aws-blocks/schema.ts` の型も合わせて更新します。適用済みのマイグレーションは編集しないでください。
+- **クエリを書く**: `aws-blocks/index.ts` の型付き `db`（Kysely）を使います。生の SQL が必要なときは Kysely の `sql` タグを使います。タイムスタンプはローカルでは `Date`、AWS（RDS Data API）では文字列で返るため、API から返す前に `toIsoString()` でそろえてください。また、影響を受けた行数（`numDeletedRows` など）は取得できないので、行が存在したかどうかは `.returning(...)` で確認します。
 - **API メソッドを追加する**: `aws-blocks/index.ts` の `api` にメソッドを追加します。フロントエンドからは `import { api } from 'aws-blocks'` で型付きのまま呼び出せます。サインインが必要なメソッドでは `requireUser(context)` を呼んでください。
 - **ネームスペースを追加する**: `aws-blocks/index.ts` で新しい `ApiNamespace` を export し、対応するクライアントを `aws-blocks/amplify-client.js` から export します。
 - **他の Building Block を使う**（KV ストア、ファイルバケット、cron ジョブなど）: `node_modules/@aws-blocks/blocks/README.md` を参照してください。

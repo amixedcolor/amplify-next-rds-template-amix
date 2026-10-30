@@ -13,7 +13,9 @@
     }
   },
   "dependencies": {
+    "@aws-blocks/bb-data": "^0.4.0",
     "@aws-blocks/blocks": "^0.8.0",
-    "aws-jwt-verify": "^5.2.1"
+    "aws-jwt-verify": "^5.2.1",
+    "kysely": "^0.28.18"
   }
 }

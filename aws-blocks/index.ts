@@ -5,16 +5,20 @@
  * with Aurora Serverless v2 (PostgreSQL) when deployed, and on a local dev
  * server with PGlite (`pnpm blocks:dev`) — same code, no changes.
  *
- * Schema: aws-blocks/migrations/*.sql
+ * Schema: aws-blocks/migrations/*.sql (+ Kysely types in ./schema.ts)
  * Blocks docs: node_modules/@aws-blocks/blocks/README.md
+ * Kysely docs: https://kysely.dev
  */
-import { ApiError, ApiNamespace, Database, Scope, sql } from '@aws-blocks/blocks';
+import { ApiError, ApiNamespace, Database, Scope } from '@aws-blocks/blocks';
+import { createKyselyAdapter } from '@aws-blocks/bb-data';
+import { sql, type Selectable } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { requireUser } from './auth.js';
+import { toIsoString, type DB, type TodoTable } from './schema.js';
 
 const scope = new Scope('app');
 
-const db = new Database(scope, 'db', {
+const database = new Database(scope, 'db', {
   migrationsPath: './aws-blocks/migrations',
   // The default name is derived from the Amplify stack name and easily exceeds
   // PostgreSQL's 63-character limit, so name it explicitly.
@@ -24,55 +28,81 @@ const db = new Database(scope, 'db', {
   minCapacity: 0,
 });
 
+// Type-safe query builder over the Database above. Safe at module scope: it
+// connects lazily on the first query (never during CDK synth).
+const db = createKyselyAdapter<DB>(database);
+
+/** A todo as returned by the API. */
 export interface Todo {
   id: string;
   content: string;
   done: boolean;
-  /** Timestamps reach the client as ISO 8601 strings (JSON-serialized Dates). */
+  /** ISO 8601 (UTC) */
   created_at: string;
+  /** ISO 8601 (UTC) */
   updated_at: string;
+}
+
+const todoColumns = ['id', 'content', 'done', 'created_at', 'updated_at'] as const;
+
+function toTodo(row: Pick<Selectable<TodoTable>, (typeof todoColumns)[number]>): Todo {
+  return {
+    ...row,
+    created_at: toIsoString(row.created_at),
+    updated_at: toIsoString(row.updated_at),
+  };
 }
 
 export const api = new ApiNamespace(scope, 'api', (context) => ({
   /** Lists the signed-in user's todos, newest first. */
-  async listTodos() {
+  async listTodos(): Promise<Todo[]> {
     const user = await requireUser(context);
-    return db.query<Todo>(
-      sql`SELECT id, content, done, created_at, updated_at FROM todos
-          WHERE owner = ${user.sub}
-          ORDER BY created_at DESC`,
-    );
+    const rows = await db
+      .selectFrom('todos')
+      .select(todoColumns)
+      .where('owner', '=', user.sub)
+      .orderBy('created_at', 'desc')
+      .execute();
+    return rows.map(toTodo);
   },
 
-  async createTodo(content: string) {
+  async createTodo(content: string): Promise<Todo> {
     const user = await requireUser(context);
     const trimmed = content.trim();
     if (!trimmed) throw new ApiError('content is required', 400);
 
-    return (await db.queryOne<Todo>(
-      sql`INSERT INTO todos (id, owner, content)
-          VALUES (${randomUUID()}, ${user.sub}, ${trimmed})
-          RETURNING id, content, done, created_at, updated_at`,
-    ))!;
+    const row = await db
+      .insertInto('todos')
+      .values({ id: randomUUID(), owner: user.sub, content: trimmed })
+      .returning(todoColumns)
+      .executeTakeFirstOrThrow();
+    return toTodo(row);
   },
 
-  async setTodoDone(id: string, done: boolean) {
+  async setTodoDone(id: string, done: boolean): Promise<Todo> {
     const user = await requireUser(context);
-    const todo = await db.queryOne<Todo>(
-      sql`UPDATE todos SET done = ${done}, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ${id} AND owner = ${user.sub}
-          RETURNING id, content, done, created_at, updated_at`,
-    );
-    if (!todo) throw new ApiError('Todo not found', 404);
-    return todo;
+    const row = await db
+      .updateTable('todos')
+      .set({ done, updated_at: sql<Date>`CURRENT_TIMESTAMP` })
+      .where('id', '=', id)
+      .where('owner', '=', user.sub)
+      .returning(todoColumns)
+      .executeTakeFirst();
+    if (!row) throw new ApiError('Todo not found', 404);
+    return toTodo(row);
   },
 
   async deleteTodo(id: string) {
     const user = await requireUser(context);
-    const { rowCount } = await db.execute(
-      sql`DELETE FROM todos WHERE id = ${id} AND owner = ${user.sub}`,
-    );
-    if (rowCount === 0) throw new ApiError('Todo not found', 404);
+    // Use RETURNING to detect a miss: the Blocks adapter does not report
+    // affected-row counts (numDeletedRows is always 0).
+    const row = await db
+      .deleteFrom('todos')
+      .where('id', '=', id)
+      .where('owner', '=', user.sub)
+      .returning('id')
+      .executeTakeFirst();
+    if (!row) throw new ApiError('Todo not found', 404);
     return { id };
   },
 }));

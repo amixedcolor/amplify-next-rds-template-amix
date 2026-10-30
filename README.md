@@ -6,7 +6,7 @@ A minimal starter for full-stack apps on AWS that need a **relational database**
 
 - **Frontend**: Next.js (App Router) + React, hosted on AWS Amplify Hosting
 - **Auth**: Amazon Cognito via Amplify Gen 2, with the Amplify UI `<Authenticator>`
-- **API + DB**: [AWS Blocks](https://github.com/aws-devtools-labs/aws-blocks): a typed RPC API on Lambda + API Gateway, backed by **Aurora Serverless v2 (PostgreSQL)** with plain SQL migrations
+- **API + DB**: [AWS Blocks](https://github.com/aws-devtools-labs/aws-blocks): a typed RPC API on Lambda + API Gateway, backed by **Aurora Serverless v2 (PostgreSQL)**, with plain SQL migrations and the [Kysely](https://kysely.dev) query builder
 
 The sample app is a per-user Todo list: each signed-in user only sees their own rows.
 
@@ -62,7 +62,8 @@ amplify/
   auth/resource.ts      Cognito configuration
   blocks.ts             Wires AWS Blocks into Amplify (CORS, Cognito config, outputs)
 aws-blocks/
-  index.ts              The API (ApiNamespace) and the Database
+  index.ts              The API (ApiNamespace) and Kysely queries
+  schema.ts             Kysely table types (mirror the migrations)
   auth.ts               Cognito ID-token verification
   migrations/*.sql      Database schema, applied in order
   amplify-client.js     Frontend client: `import { api } from 'aws-blocks'`
@@ -74,7 +75,8 @@ app/                    Next.js App Router pages
 
 ## Customizing
 
-- **Change the schema**: add a new numbered file such as `aws-blocks/migrations/002_add_due_date.sql`. Don't edit migrations that have already been applied.
+- **Change the schema**: add a new numbered file such as `aws-blocks/migrations/002_add_due_date.sql`, then update the matching types in `aws-blocks/schema.ts`. Don't edit migrations that have already been applied.
+- **Write queries**: use the type-safe `db` (Kysely) in `aws-blocks/index.ts`. For raw SQL, use Kysely's `sql` template tag. Timestamps come back as `Date` locally but as strings on AWS (RDS Data API), so normalize them with `toIsoString()` before returning. Affected-row counts (`numDeletedRows` and so on) are not reported; use `.returning(...)` to check whether a row was hit.
 - **Add an API method**: add a method to the `api` namespace in `aws-blocks/index.ts`. The frontend gets it fully typed through `import { api } from 'aws-blocks'`. Call `requireUser(context)` in any method that needs a signed-in user.
 - **Add another namespace**: export a new `ApiNamespace` from `aws-blocks/index.ts`, and a matching client from `aws-blocks/amplify-client.js`.
 - **Use more building blocks** (KV store, file bucket, cron jobs, …): see `node_modules/@aws-blocks/blocks/README.md`.
