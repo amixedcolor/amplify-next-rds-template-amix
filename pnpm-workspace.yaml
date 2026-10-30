@@ -1,0 +1,13 @@
+packages:
+  - aws-blocks
+
+# Dependency install scripts that may run (pnpm blocks all others by default).
+allowBuilds:
+  unrs-resolver: true # native resolver used by eslint-config-next
+  # esbuild's postinstall swaps bin/esbuild for the native binary, which breaks
+  # pnpm's .bin shims (CDK Lambda bundling then fails). The JS launcher works
+  # without it, using the platform binary from optionalDependencies.
+  esbuild: false
+  '@parcel/watcher': false # builds from source only if no prebuilt binary
+  '@aws-amplify/hosting': false # prints a notice only
+  core-js: false # prints a notice only

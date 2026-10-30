@@ -1,0 +1,19 @@
+{
+  "name": "aws-blocks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "browser": "./amplify-client.js",
+      "react-server": "./amplify-client.js",
+      "import": "./amplify-client.js",
+      "default": "./index.ts"
+    }
+  },
+  "dependencies": {
+    "@aws-blocks/blocks": "^0.8.0",
+    "aws-jwt-verify": "^5.2.1"
+  }
+}
