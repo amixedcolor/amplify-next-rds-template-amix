@@ -27,7 +27,7 @@ export default function TodoPage() {
     api.listTodos().then(setTodos, (e) => setError(errorMessage(e)));
   }, []);
 
-  /** Runs a mutation, then reloads the list. */
+  /** Runs a mutation (or nothing, to just retry loading), then reloads the list. */
   async function run(action: () => Promise<unknown>) {
     setError(null);
     try {
@@ -67,7 +67,14 @@ export default function TodoPage() {
         <button type="submit">Add</button>
       </form>
 
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert">
+          {error}{' '}
+          <button type="button" onClick={() => void run(async () => {})}>
+            Reload
+          </button>
+        </p>
+      )}
 
       <ul>
         {todos.map((todo) => (

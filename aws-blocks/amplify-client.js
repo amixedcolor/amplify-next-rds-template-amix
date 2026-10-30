@@ -15,6 +15,8 @@ import { ApiNamespaceClient, registerMiddleware } from '@aws-blocks/blocks/clien
 import { fetchAuthSession } from 'aws-amplify/auth';
 import outputs from '../amplify_outputs.json';
 
+// amplify_outputs.json must exist (`pnpm sandbox` writes it) even when using
+// NEXT_PUBLIC_BLOCKS_API_URL: it also configures Cognito sign-in.
 const BLOCKS_API_URL = process.env.NEXT_PUBLIC_BLOCKS_API_URL || outputs.custom?.blocks_api_url;
 if (!BLOCKS_API_URL) {
   throw new Error(

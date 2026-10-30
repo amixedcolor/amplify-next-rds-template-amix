@@ -6,6 +6,10 @@ packages:
 # pnpm 11 reads this here, not from .npmrc.
 nodeLinker: hoisted
 
+# Fail fast on unsupported Node.js versions (package.json "engines"): the Amplify
+# CLI crashes on Node.js 25 ("localStorage.getItem is not a function").
+engineStrict: true
+
 # Dependency install scripts that may run (pnpm blocks all others by default).
 allowBuilds:
   unrs-resolver: true # native resolver used by eslint-config-next

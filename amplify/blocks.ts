@@ -40,6 +40,8 @@ export async function addBlocks(backend: Backend<{ auth: typeof auth }>) {
  *   branch of this app (https://<branch>.<appId>.amplifyapp.com) is allowed.
  * - Custom domains: set BLOCKS_ALLOWED_ORIGINS (comma-separated regexes) as an
  *   Amplify Hosting environment variable, e.g. `^https://app\.example\.com$`.
+ *   Patterns must not contain commas (e.g. `{1,3}`): Blocks also joins and
+ *   splits origins on commas.
  */
 function allowedOrigins(sandboxMode: boolean): string[] {
   const origins: string[] = [];

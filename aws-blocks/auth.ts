@@ -1,6 +1,6 @@
 /**
  * Verifies the Cognito ID token that the frontend sends as
- * `Authorization: Bearer <token>` (see aws-blocks/client.js).
+ * `Authorization: Bearer <token>` (see aws-blocks/amplify-client.js).
  *
  * The User Pool is owned by Amplify (amplify/auth/resource.ts); its IDs reach
  * this runtime as COGNITO_USER_POOL_ID / COGNITO_CLIENT_ID (see amplify/blocks.ts).

@@ -18,9 +18,9 @@
 
 ## はじめかた
 
-前提: Node.js 22 以上、[pnpm](https://pnpm.io/ja/installation)（バージョンは `package.json` の `packageManager` で固定）、AWS アカウント、ローカルの AWS 認証情報（[Amplify のセットアップ手順](https://docs.amplify.aws/nextjs/start/account-setup/)）。
+前提: Node.js 22 または 24（`.nvmrc` では 22 を指定。Node.js 25 では Amplify CLI がクラッシュするため非対応）、[pnpm](https://pnpm.io/ja/installation)（バージョンは `package.json` の `packageManager` で固定）、AWS アカウント、ローカルの AWS 認証情報（[Amplify のセットアップ手順](https://docs.amplify.aws/nextjs/start/account-setup/)）。
 
-1. GitHub の **Use this template** でリポジトリを作成し、clone します。
+1. GitHub の **Use this template** でリポジトリを作成し、clone します。最初のデプロイの前に、[最初のデプロイ前に決める名前](#最初のデプロイ前に決める名前) を確認してください。
 2. 依存パッケージをインストールします。
    ```bash
    pnpm install
@@ -41,7 +41,7 @@
 
 ### 任意: API をローカルで動かす
 
-`pnpm blocks:dev` を実行すると、`aws-blocks/index.ts` がローカルの PGlite データベース（`.bb-data/` に保存）を使って http://localhost:3001 で動きます。バックエンドを変更するたびに再デプロイする必要がなくなります。サインインには引き続きサンドボックスの Cognito User Pool を使います。
+`pnpm blocks:dev` を実行すると、`aws-blocks/index.ts` がローカルの PGlite データベース（`.bb-data/` に保存）を使って http://localhost:3001 で動きます。バックエンドを変更するたびに再デプロイする必要がなくなります。サインインには引き続きサンドボックスの Cognito User Pool を使います。フロントエンドとローカルサーバーの両方が `amplify_outputs.json` を読むので、先に一度 `pnpm sandbox` を実行しておいてください。
 
 ```bash
 cp .env.example .env.local   # フロントエンドの接続先を http://localhost:3001 に切り替え
@@ -56,7 +56,7 @@ pnpm dev
 
 > **Next.js のバージョンについて**: Amplify Hosting のドキュメントでは、SSR の公式サポートは Next.js 12〜15 とされています（[出典](https://docs.aws.amazon.com/amplify/latest/userguide/ssr-amplify-support.html)）。このテンプレートは Next.js 16 を使っています。Hosting でのビルドや SSR で問題が起きた場合は、Next.js 15 を試してください。
 
-CORS は、このアプリのすべてのブランチ（`https://<branch>.<appId>.amplifyapp.com`）に対して許可されています。カスタムドメインを使う場合は、Amplify の環境変数 `BLOCKS_ALLOWED_ORIGINS` に正規表現をカンマ区切りで設定してください（例: `^https://app\.example\.com$`）。
+CORS は、このアプリのすべてのブランチ（`https://<branch>.<appId>.amplifyapp.com`）に対して許可されています。カスタムドメインを使う場合は、Amplify の環境変数 `BLOCKS_ALLOWED_ORIGINS` に正規表現をカンマ区切りで設定してください（例: `^https://app\.example\.com$`）。正規表現自体にはカンマ（`{1,3}` など）を含められません。
 
 ## ディレクトリ構成
 
@@ -79,6 +79,11 @@ aws-blocks/
 app/                    Next.js App Router のページ
 ```
 
+## 最初のデプロイ前に決める名前
+
+- `package.json` の `name` と、`app/layout.tsx` のページタイトルを変更してください。
+- `aws-blocks/index.ts` にある DB の識別子（`new Scope('app')`、ID の `'db'`、`databaseName`）を決めてください。これらは AWS リソースの名前になるため、デプロイ後に変えると、空の Aurora クラスターが新しく作られます。ブランチデプロイでは古いクラスターも残り、課金が続きます。
+
 ## カスタマイズ
 
 - **スキーマを変更する**:
@@ -87,6 +92,9 @@ app/                    Next.js App Router のページ
 
   `pnpm db:types --verify` は、生成された型がマイグレーションと一致しないと失敗します。CI と Amplify Hosting のバックエンドビルドでは、デプロイ前にこのコマンドと `pnpm typecheck:backend` を実行します。
 - **クエリを書く**: `aws-blocks/index.ts` の型付き `db`（Kysely）を使います。生の SQL が必要なときは Kysely の `sql` タグを使います。タイムスタンプはローカルでは `Date`、AWS（RDS Data API）では文字列で返るため、API から返す前に `toIsoString()` でそろえてください。また、影響を受けた行数（`numDeletedRows` など）は取得できないので、行が存在したかどうかは `.returning(...)` で確認します。
+  次の2点は、ローカルでは動いても AWS（RDS Data API）では失敗します。
+  - **型付きのパラメータ**: パラメータはテキストとして送られます。`timestamp`、`date`、`uuid`、`json`/`jsonb`、`numeric` のカラムと比較したり書き込んだりする値は、``sql<Date>`${value}::timestamptz` `` のように明示的にキャストしてください。詳しくは `aws-blocks/timestamp.ts` を参照してください。
+  - **レスポンスのサイズ**: 1回のレスポンスは 1 MiB までなので、一覧のクエリには必ず `.limit(...)` を付け、ページングしてください。
 - **API メソッドを追加する**: `aws-blocks/index.ts` の `api` にメソッドを追加します。フロントエンドからは `import { api } from 'aws-blocks'` で型付きのまま呼び出せます。各メソッドでは次の3点を守ってください。
   - サインインが必要なメソッドでは `requireUser(context)` を呼びます。
   - ユーザーが所有するテーブルへのクエリは、`todosOf(user)` のような所有者で絞り込み済みのヘルパーから始めます。こうすると所有者の条件を書き忘れることがありません。Blocks の Postgres RLS（`withRLS`）は Kysely アダプターと組み合わせられないため、所有者のチェックはアプリ側で行います。
@@ -103,6 +111,12 @@ app/                    Next.js App Router のページ
   - **本番環境**: `aws-blocks/index.ts` の `minCapacity` を上げる（例: `0.5`）と、DB が常時起動した状態になります。その分 ACU 時間単位で課金されます。
 - `pnpm sandbox:delete` でサンドボックスをデータベースごと削除できます。
 - ブランチデプロイでは、スタックを更新してもデータが残るように、Aurora クラスターは**保持（Retain）**され、削除保護も有効になります。Amplify アプリを削除してもクラスターは残ります。削除するには RDS コンソールで削除保護を無効にしてから削除してください。
+
+## テレメトリ
+
+このテンプレートが使うツールは、デフォルトで匿名の利用データを送信します。
+- **AWS Blocks**（dev サーバー、synth）: `AWS_BLOCKS_DISABLE_TELEMETRY=1` または `npx blocks-telemetry --disable` で無効にできます。
+- **Amplify CLI**（`ampx`）: `pnpm exec ampx configure telemetry disable` で無効にできます。
 
 ## ライセンス
 

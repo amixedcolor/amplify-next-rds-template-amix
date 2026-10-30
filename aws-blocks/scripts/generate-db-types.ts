@@ -42,10 +42,11 @@ try {
   const file = relative(process.cwd(), outFile);
   console.log(verify ? `✅ ${file} is up to date` : `✅ Generated ${file}`);
 } catch (error) {
+  const outOfDate = error instanceof Error && error.message.startsWith('Generated types are not up-to-date');
   console.error(
-    verify
+    outOfDate
       ? '❌ aws-blocks/db.generated.ts is out of date. Run `pnpm db:types` and commit the result.'
-      : error,
+      : error, // e.g. a SQL error in a migration
   );
   process.exitCode = 1;
 } finally {

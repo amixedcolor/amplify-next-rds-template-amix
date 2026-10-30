@@ -18,9 +18,9 @@ Browser ──(Cognito ID token)──▶ API Gateway ─▶ Lambda (aws-blocks/
 
 ## Getting started
 
-Prerequisites: Node.js 22+, [pnpm](https://pnpm.io/installation) (version pinned in `package.json` `packageManager`), an AWS account, and local AWS credentials ([Amplify setup guide](https://docs.amplify.aws/nextjs/start/account-setup/)).
+Prerequisites: Node.js 22 or 24 (`.nvmrc` pins 22; Node.js 25 is not supported because the Amplify CLI crashes on it), [pnpm](https://pnpm.io/installation) (version pinned in `package.json` `packageManager`), an AWS account, and local AWS credentials ([Amplify setup guide](https://docs.amplify.aws/nextjs/start/account-setup/)).
 
-1. Create your repository with **Use this template** on GitHub, then clone it.
+1. Create your repository with **Use this template** on GitHub, then clone it. Before the first deploy, see [Naming before your first deploy](#naming-before-your-first-deploy).
 2. Install dependencies:
    ```bash
    pnpm install
@@ -41,7 +41,7 @@ Prerequisites: Node.js 22+, [pnpm](https://pnpm.io/installation) (version pinned
 
 ### Optional: run the API locally
 
-`pnpm blocks:dev` runs `aws-blocks/index.ts` on http://localhost:3001 with a local PGlite database (stored in `.bb-data/`), so backend edits don't need a redeploy. Sign-in still uses your sandbox's Cognito User Pool.
+`pnpm blocks:dev` runs `aws-blocks/index.ts` on http://localhost:3001 with a local PGlite database (stored in `.bb-data/`), so backend edits don't need a redeploy. Sign-in still uses your sandbox's Cognito User Pool, so run `pnpm sandbox` once first: the frontend and the local server both read `amplify_outputs.json`.
 
 ```bash
 cp .env.example .env.local   # points the frontend at http://localhost:3001
@@ -56,7 +56,7 @@ pnpm dev
 
 > **Next.js version**: the Amplify Hosting docs list official SSR support for Next.js 12 through 15 ([source](https://docs.aws.amazon.com/amplify/latest/userguide/ssr-amplify-support.html)). This template uses Next.js 16. If a Hosting build or SSR misbehaves, try Next.js 15.
 
-CORS is open to every branch of the app (`https://<branch>.<appId>.amplifyapp.com`). If you use a custom domain, add an Amplify environment variable `BLOCKS_ALLOWED_ORIGINS` with comma-separated regular expressions, for example `^https://app\.example\.com$`.
+CORS is open to every branch of the app (`https://<branch>.<appId>.amplifyapp.com`). If you use a custom domain, add an Amplify environment variable `BLOCKS_ALLOWED_ORIGINS` with comma-separated regular expressions, for example `^https://app\.example\.com$`. The patterns themselves must not contain commas (such as `{1,3}`).
 
 ## Project structure
 
@@ -79,6 +79,11 @@ aws-blocks/
 app/                    Next.js App Router pages
 ```
 
+## Naming before your first deploy
+
+- Rename `name` in `package.json` and the page title in `app/layout.tsx`.
+- Decide the database identifiers in `aws-blocks/index.ts` (`new Scope('app')`, the `'db'` id and `databaseName`). They name the AWS resources: changing them after a deploy creates a new, empty Aurora cluster. Branch deployments keep the old cluster, which keeps billing.
+
 ## Customizing
 
 - **Change the schema**:
@@ -87,6 +92,9 @@ app/                    Next.js App Router pages
 
   `pnpm db:types --verify` fails if the generated types don't match the migrations. CI and the Amplify Hosting backend build run it (along with `pnpm typecheck:backend`) before anything is deployed.
 - **Write queries**: use the type-safe `db` (Kysely) in `aws-blocks/index.ts`. For raw SQL, use Kysely's `sql` template tag. Timestamps come back as `Date` locally but as strings on AWS (RDS Data API), so normalize them with `toIsoString()` before returning. Affected-row counts (`numDeletedRows` and so on) are not reported; use `.returning(...)` to check whether a row was hit.
+  Two things work locally but fail on AWS (RDS Data API):
+  - **Typed parameters**: parameters are sent as text, so cast values compared with or written to `timestamp`, `date`, `uuid`, `json`/`jsonb` or `numeric` columns, e.g. ``sql<Date>`${value}::timestamptz` ``. See `aws-blocks/timestamp.ts`.
+  - **Response size**: a response is capped at 1 MiB, so always bound list queries with `.limit(...)` and paginate.
 - **Add an API method**: add a method to the `api` namespace in `aws-blocks/index.ts`. The frontend gets it fully typed through `import { api } from 'aws-blocks'`. In each method:
   - Call `requireUser(context)` when the method needs a signed-in user.
   - Start queries on user-owned tables from an owner-scoped helper like `todosOf(user)`, so the owner filter can't be forgotten. Blocks' Postgres RLS (`withRLS`) can't be combined with the Kysely adapter, so ownership is enforced in the app.
@@ -103,6 +111,12 @@ app/                    Next.js App Router pages
   - **Production**: raise `minCapacity` in `aws-blocks/index.ts` (for example to `0.5`) to keep the database always on. This is billed per ACU-hour.
 - `pnpm sandbox:delete` deletes the sandbox, including its database.
 - Branch deployments **retain** the Aurora cluster and enable deletion protection, so data survives stack updates. Deleting the Amplify app does not delete the cluster. To remove it, turn off deletion protection and delete it in the RDS console.
+
+## Telemetry
+
+The tools this template uses send anonymous usage data by default:
+- **AWS Blocks** (dev server, synthesis): disable with `AWS_BLOCKS_DISABLE_TELEMETRY=1` or `npx blocks-telemetry --disable`.
+- **Amplify CLI** (`ampx`): disable with `pnpm exec ampx configure telemetry disable`.
 
 ## License
 

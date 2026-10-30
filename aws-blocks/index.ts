@@ -18,6 +18,9 @@ import type { DB, Todos } from './db.generated.js';
 import { toIsoString } from './timestamp.js';
 import { requireBoolean, requireText, requireUuid } from './validate.js';
 
+// These identifiers ('app', 'db' and databaseName below) name the AWS resources.
+// Changing them after a deploy creates a new, empty Aurora cluster; the old one
+// is retained (branch deployments) and keeps billing. Pick names before deploying.
 const scope = new Scope('app');
 
 const database = new Database(scope, 'db', {
@@ -76,12 +79,16 @@ function todosOf(user: User) {
 }
 
 const MAX_CONTENT_LENGTH = 500;
+// Always bound list queries: an RDS Data API response is capped at 1 MiB, so an
+// unbounded SELECT that works locally can fail on AWS as a table grows.
+// Add pagination (e.g. keyset on created_at) when you need more.
+const MAX_LIST_SIZE = 200;
 
 export const api = new ApiNamespace(scope, 'api', (context) => ({
-  /** Lists the signed-in user's todos, newest first. */
+  /** Lists the signed-in user's newest todos (up to MAX_LIST_SIZE). */
   async listTodos(): Promise<Todo[]> {
     const todos = todosOf(await requireUser(context));
-    const rows = await todos.selectFrom().select(todoColumns).orderBy('created_at', 'desc').execute();
+    const rows = await todos.selectFrom().select(todoColumns).orderBy('created_at', 'desc').limit(MAX_LIST_SIZE).execute();
     return rows.map(toTodo);
   },
 

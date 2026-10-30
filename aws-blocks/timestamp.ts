@@ -3,6 +3,14 @@
  *
  * Timestamps come back as `Date` from PGlite (local) but as a string such as
  * '2026-01-01 12:00:00.000' (UTC, no offset) from the RDS Data API (AWS).
+ *
+ * Writing or comparing: the Data API sends every JS string/Date parameter as text
+ * (no type hint), so PostgreSQL rejects it against a timestamp column on AWS even
+ * though PGlite accepts it. Cast explicitly, e.g.
+ *   .where('created_at', '>', sql<Date>`${since}::timestamptz`)
+ *   .set({ due_at: sql<Date>`${value}::timestamptz` })
+ * or let the database fill it (DEFAULT CURRENT_TIMESTAMP / sql`CURRENT_TIMESTAMP`).
+ * The same applies to uuid, json/jsonb, numeric and date columns.
  */
 import type { ColumnType } from 'kysely';
 
