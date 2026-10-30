@@ -11,11 +11,12 @@
  */
 import { ApiError, ApiNamespace, Database, Scope } from '@aws-blocks/blocks';
 import { createKyselyAdapter } from '@aws-blocks/bb-data';
-import { sql, type Selectable } from 'kysely';
+import { sql, type Insertable, type Selectable } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { requireUser } from './auth.js';
+import { requireUser, type User } from './auth.js';
 import type { DB, Todos } from './db.generated.js';
 import { toIsoString } from './timestamp.js';
+import { requireBoolean, requireText, requireUuid } from './validate.js';
 
 const scope = new Scope('app');
 
@@ -54,39 +55,47 @@ function toTodo(row: Pick<Selectable<Todos>, (typeof todoColumns)[number]>): Tod
   };
 }
 
+/**
+ * The signed-in user's todos. Start every todos query here: the owner filter is
+ * already applied (and set on insert), so a query can't leak or change another
+ * user's rows by forgetting a WHERE clause. (Blocks' Postgres RLS via withRLS()
+ * can't be combined with the Kysely adapter, so ownership is enforced here.)
+ */
+function todosOf(user: User) {
+  return {
+    selectFrom: () => db.selectFrom('todos').where('owner', '=', user.sub),
+    insertInto: (values: Omit<Insertable<Todos>, 'owner'>) =>
+      db.insertInto('todos').values({ ...values, owner: user.sub }),
+    updateTable: () => db.updateTable('todos').where('owner', '=', user.sub),
+    deleteFrom: () => db.deleteFrom('todos').where('owner', '=', user.sub),
+  };
+}
+
+const MAX_CONTENT_LENGTH = 500;
+
 export const api = new ApiNamespace(scope, 'api', (context) => ({
   /** Lists the signed-in user's todos, newest first. */
   async listTodos(): Promise<Todo[]> {
-    const user = await requireUser(context);
-    const rows = await db
-      .selectFrom('todos')
-      .select(todoColumns)
-      .where('owner', '=', user.sub)
-      .orderBy('created_at', 'desc')
-      .execute();
+    const todos = todosOf(await requireUser(context));
+    const rows = await todos.selectFrom().select(todoColumns).orderBy('created_at', 'desc').execute();
     return rows.map(toTodo);
   },
 
   async createTodo(content: string): Promise<Todo> {
-    const user = await requireUser(context);
-    const trimmed = content.trim();
-    if (!trimmed) throw new ApiError('content is required', 400);
-
-    const row = await db
-      .insertInto('todos')
-      .values({ id: randomUUID(), owner: user.sub, content: trimmed })
+    const todos = todosOf(await requireUser(context));
+    const row = await todos
+      .insertInto({ id: randomUUID(), content: requireText(content, 'content', MAX_CONTENT_LENGTH) })
       .returning(todoColumns)
       .executeTakeFirstOrThrow();
     return toTodo(row);
   },
 
   async setTodoDone(id: string, done: boolean): Promise<Todo> {
-    const user = await requireUser(context);
-    const row = await db
-      .updateTable('todos')
-      .set({ done, updated_at: sql<Date>`CURRENT_TIMESTAMP` })
-      .where('id', '=', id)
-      .where('owner', '=', user.sub)
+    const todos = todosOf(await requireUser(context));
+    const row = await todos
+      .updateTable()
+      .set({ done: requireBoolean(done, 'done'), updated_at: sql<Date>`CURRENT_TIMESTAMP` })
+      .where('id', '=', requireUuid(id, 'id'))
       .returning(todoColumns)
       .executeTakeFirst();
     if (!row) throw new ApiError('Todo not found', 404);
@@ -94,16 +103,15 @@ export const api = new ApiNamespace(scope, 'api', (context) => ({
   },
 
   async deleteTodo(id: string) {
-    const user = await requireUser(context);
+    const todos = todosOf(await requireUser(context));
     // Use RETURNING to detect a miss: the Blocks adapter does not report
     // affected-row counts (numDeletedRows is always 0).
-    const row = await db
-      .deleteFrom('todos')
-      .where('id', '=', id)
-      .where('owner', '=', user.sub)
+    const row = await todos
+      .deleteFrom()
+      .where('id', '=', requireUuid(id, 'id'))
       .returning('id')
       .executeTakeFirst();
     if (!row) throw new ApiError('Todo not found', 404);
-    return { id };
+    return { id: row.id };
   },
 }));

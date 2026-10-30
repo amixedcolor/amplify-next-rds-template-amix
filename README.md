@@ -66,6 +66,7 @@ aws-blocks/
   db.generated.ts       Kysely table types, generated from the migrations (`pnpm db:types`)
   timestamp.ts          Timestamp type and ISO conversion
   auth.ts               Cognito ID-token verification
+  validate.ts           Runtime validation of API arguments
   migrations/*.sql      Database schema, applied in order
   amplify-client.js     Frontend client: `import { api } from 'aws-blocks'`
   index.cdk.ts          CDK entry point (called from amplify/blocks.ts)
@@ -82,7 +83,10 @@ app/                    Next.js App Router pages
 
   `pnpm db:types --verify` fails if the generated types don't match the migrations. CI and the Amplify Hosting backend build run it (along with `pnpm typecheck:backend`) before anything is deployed.
 - **Write queries**: use the type-safe `db` (Kysely) in `aws-blocks/index.ts`. For raw SQL, use Kysely's `sql` template tag. Timestamps come back as `Date` locally but as strings on AWS (RDS Data API), so normalize them with `toIsoString()` before returning. Affected-row counts (`numDeletedRows` and so on) are not reported; use `.returning(...)` to check whether a row was hit.
-- **Add an API method**: add a method to the `api` namespace in `aws-blocks/index.ts`. The frontend gets it fully typed through `import { api } from 'aws-blocks'`. Call `requireUser(context)` in any method that needs a signed-in user.
+- **Add an API method**: add a method to the `api` namespace in `aws-blocks/index.ts`. The frontend gets it fully typed through `import { api } from 'aws-blocks'`. In each method:
+  - Call `requireUser(context)` when the method needs a signed-in user.
+  - Start queries on user-owned tables from an owner-scoped helper like `todosOf(user)`, so the owner filter can't be forgotten. Blocks' Postgres RLS (`withRLS`) can't be combined with the Kysely adapter, so ownership is enforced in the app.
+  - Validate every argument with `aws-blocks/validate.ts`. TypeScript types are not checked at runtime, and clients can send any JSON.
 - **Add another namespace**: export a new `ApiNamespace` from `aws-blocks/index.ts`, and a matching client from `aws-blocks/amplify-client.js`.
 - **Use more building blocks** (KV store, file bucket, cron jobs, …): see `node_modules/@aws-blocks/blocks/README.md`.
 - **Add Amplify Data / Storage**: define them under `amplify/` as usual and add them to `defineBackend` in `amplify/backend.ts`.

@@ -12,9 +12,9 @@ import type { auth } from './auth/resource.js';
  */
 export async function addBlocks(backend: Backend<{ auth: typeof auth }>) {
   const stack = backend.createStack('blocks');
-  const sandboxMode =
-    stack.node.tryGetContext('amplify-backend-type') === 'sandbox' ||
-    process.env.AMPLIFY_SANDBOX === 'true';
+  // Set by `pnpm sandbox` / `pnpm sandbox:delete` (package.json). Amplify has no
+  // documented way to detect a sandbox deployment from backend code.
+  const sandboxMode = process.env.AMPLIFY_SANDBOX === 'true';
 
   const blocks = await createBlocksBackend(stack, {
     sandboxMode,

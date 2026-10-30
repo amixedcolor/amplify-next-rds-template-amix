@@ -1,12 +1,17 @@
 packages:
   - aws-blocks
 
+# Flat node_modules, as Amplify Hosting requires for pnpm workspaces
+# (https://docs.aws.amazon.com/amplify/latest/userguide/monorepo-configuration.html).
+# pnpm 11 reads this here, not from .npmrc.
+nodeLinker: hoisted
+
 # Dependency install scripts that may run (pnpm blocks all others by default).
 allowBuilds:
   unrs-resolver: true # native resolver used by eslint-config-next
-  # esbuild's postinstall swaps bin/esbuild for the native binary, which breaks
-  # pnpm's .bin shims (CDK Lambda bundling then fails). The JS launcher works
-  # without it, using the platform binary from optionalDependencies.
+  # Not needed: esbuild's JS launcher finds the platform binary from
+  # optionalDependencies. (With the default isolated linker the postinstall even
+  # broke .bin shims and CDK Lambda bundling.)
   esbuild: false
   '@parcel/watcher': false # builds from source only if no prebuilt binary
   '@aws-amplify/hosting': false # prints a notice only

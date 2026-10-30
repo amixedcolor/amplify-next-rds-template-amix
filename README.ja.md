@@ -66,6 +66,7 @@ aws-blocks/
   db.generated.ts       Kysely 用のテーブル型。マイグレーションから自動生成（`pnpm db:types`）
   timestamp.ts          タイムスタンプの型と ISO 形式への変換
   auth.ts               Cognito ID トークンの検証
+  validate.ts           API 引数の実行時検査
   migrations/*.sql      DB スキーマ（ファイル名順に適用）
   amplify-client.js     フロントエンド用クライアント: `import { api } from 'aws-blocks'`
   index.cdk.ts          CDK エントリポイント（amplify/blocks.ts から呼び出し）
@@ -82,7 +83,10 @@ app/                    Next.js App Router のページ
 
   `pnpm db:types --verify` は、生成された型がマイグレーションと一致しないと失敗します。CI と Amplify Hosting のバックエンドビルドでは、デプロイ前にこのコマンドと `pnpm typecheck:backend` を実行します。
 - **クエリを書く**: `aws-blocks/index.ts` の型付き `db`（Kysely）を使います。生の SQL が必要なときは Kysely の `sql` タグを使います。タイムスタンプはローカルでは `Date`、AWS（RDS Data API）では文字列で返るため、API から返す前に `toIsoString()` でそろえてください。また、影響を受けた行数（`numDeletedRows` など）は取得できないので、行が存在したかどうかは `.returning(...)` で確認します。
-- **API メソッドを追加する**: `aws-blocks/index.ts` の `api` にメソッドを追加します。フロントエンドからは `import { api } from 'aws-blocks'` で型付きのまま呼び出せます。サインインが必要なメソッドでは `requireUser(context)` を呼んでください。
+- **API メソッドを追加する**: `aws-blocks/index.ts` の `api` にメソッドを追加します。フロントエンドからは `import { api } from 'aws-blocks'` で型付きのまま呼び出せます。各メソッドでは次の3点を守ってください。
+  - サインインが必要なメソッドでは `requireUser(context)` を呼びます。
+  - ユーザーが所有するテーブルへのクエリは、`todosOf(user)` のような所有者で絞り込み済みのヘルパーから始めます。こうすると所有者の条件を書き忘れることがありません。Blocks の Postgres RLS（`withRLS`）は Kysely アダプターと組み合わせられないため、所有者のチェックはアプリ側で行います。
+  - 引数はすべて `aws-blocks/validate.ts` で検査します。TypeScript の型は実行時には検査されず、クライアントはどんな JSON でも送れるためです。
 - **ネームスペースを追加する**: `aws-blocks/index.ts` で新しい `ApiNamespace` を export し、対応するクライアントを `aws-blocks/amplify-client.js` から export します。
 - **他の Building Block を使う**（KV ストア、ファイルバケット、cron ジョブなど）: `node_modules/@aws-blocks/blocks/README.md` を参照してください。
 - **Amplify Data / Storage を追加する**: 通常どおり `amplify/` 配下で定義し、`amplify/backend.ts` の `defineBackend` に加えます。
