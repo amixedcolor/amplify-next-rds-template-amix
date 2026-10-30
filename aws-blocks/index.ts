@@ -25,8 +25,12 @@ const database = new Database(scope, 'db', {
   // The default name is derived from the Amplify stack name and easily exceeds
   // PostgreSQL's 63-character limit, so name it explicitly.
   databaseName: 'app',
-  // 0 lets Aurora auto-pause when idle (no compute cost), at the price of a
-  // cold start of several seconds on the first query. Raise to 0.5+ for production.
+  // 0 lets Aurora auto-pause after ~5 minutes idle (no compute cost). The catch:
+  // - The request that wakes it fails with ConnectionFailedException while it
+  //   resumes (the frontend shows a "try again" message; see app/page.tsx).
+  // - A deploy that runs migrations against a paused cluster can fail even though
+  //   Blocks retries for ~2 minutes; re-run the build/sandbox and it succeeds.
+  // Raise to 0.5+ for production to keep it always on (billed per ACU-hour).
   minCapacity: 0,
 });
 

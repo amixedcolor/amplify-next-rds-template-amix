@@ -4,7 +4,7 @@
 
 **リレーショナルデータベース**を使うフルスタックアプリを AWS 上で作るための、最小構成のスターターです。
 
-- **フロントエンド**: Next.js (App Router) + React。AWS Amplify Hosting でホスティング
+- **フロントエンド**: Next.js 16 (App Router) + React 19。AWS Amplify Hosting でホスティング
 - **認証**: Amplify Gen 2 による Amazon Cognito と、Amplify UI の `<Authenticator>`
 - **API + DB**: [AWS Blocks](https://github.com/aws-devtools-labs/aws-blocks)。Lambda + API Gateway 上の型付き RPC API で、DB は **Aurora Serverless v2 (PostgreSQL)**。スキーマは素の SQL マイグレーションで管理し、クエリは [Kysely](https://kysely.dev)（クエリビルダー）で書きます
 
@@ -35,7 +35,9 @@
    pnpm dev
    ```
 
-> `pnpm exec ampx ...` を直接実行せず、必ず `pnpm sandbox` / `pnpm sandbox:delete` を使ってください。これらのスクリプトは、AWS Blocks の synth に必要な `NODE_OPTIONS=--conditions=cdk` を設定します。
+> `ampx` を直接実行せず、必ず `pnpm sandbox` / `pnpm sandbox:delete` を使ってください。これらのスクリプトは次の2つを設定します。
+> - `NODE_OPTIONS=--conditions=cdk`: AWS Blocks の synth に必要です。
+> - `AMPLIFY_SANDBOX=true`: このデプロイがサンドボックスであることを示します。これがないと DB が本番用の設定（保持・削除保護あり）でデプロイされ、`sandbox:delete` で削除できなくなります。
 
 ### 任意: API をローカルで動かす
 
@@ -50,7 +52,9 @@ pnpm dev
 ## Amplify Hosting へのデプロイ
 
 1. Amplify コンソールで **新しいアプリを作成** を選び、リポジトリを接続します。
-2. Amplify が [`amplify.yml`](./amplify.yml) を読み込み、`ampx pipeline-deploy` でバックエンドをデプロイしてから Next.js をビルドします。
+2. Amplify が [`amplify.yml`](./amplify.yml) を読み込みます。ビルドでは Node.js 22 と pnpm を用意したあと、`pnpm db:types --verify` と `pnpm typecheck:backend` を実行します。これらが通れば `ampx pipeline-deploy` でバックエンドをデプロイし、最後に Next.js をビルドします。
+
+> **Next.js のバージョンについて**: Amplify Hosting のドキュメントでは、SSR の公式サポートは Next.js 12〜15 とされています（[出典](https://docs.aws.amazon.com/amplify/latest/userguide/ssr-amplify-support.html)）。このテンプレートは Next.js 16 を使っています。Hosting でのビルドや SSR で問題が起きた場合は、Next.js 15 を試してください。
 
 CORS は、このアプリのすべてのブランチ（`https://<branch>.<appId>.amplifyapp.com`）に対して許可されています。カスタムドメインを使う場合は、Amplify の環境変数 `BLOCKS_ALLOWED_ORIGINS` に正規表現をカンマ区切りで設定してください（例: `^https://app\.example\.com$`）。
 
@@ -93,7 +97,10 @@ app/                    Next.js App Router のページ
 
 ## コストと後片付け
 
-- Aurora Serverless v2 は `minCapacity: 0` で動いているため、アイドル時は自動で一時停止します。一時停止後の最初のクエリには数秒かかります。本番環境では `aws-blocks/index.ts` の `minCapacity` を上げてください。
+- Aurora Serverless v2 は `minCapacity: 0` で動いているため、約5分アイドルが続くと自動で一時停止し、停止中のコンピュート料金はかかりません。そのかわり、次の点に注意してください。
+  - **一時停止後の最初のリクエスト**: クラスターが復帰するまでの間、`ConnectionFailedException`（"The database connection failed"）で失敗します。数秒後に再試行すれば成功します。サンプルアプリでは、この場合に「再試行してください」というメッセージを表示します。
+  - **マイグレーションを含むデプロイ**: 一時停止中のクラスターに対してマイグレーションを実行すると、Blocks が約2分間再試行するにもかかわらず、初回のデプロイが失敗することがあります。ビルド（または `pnpm sandbox`）を再実行すれば成功します。
+  - **本番環境**: `aws-blocks/index.ts` の `minCapacity` を上げる（例: `0.5`）と、DB が常時起動した状態になります。その分 ACU 時間単位で課金されます。
 - `pnpm sandbox:delete` でサンドボックスをデータベースごと削除できます。
 - ブランチデプロイでは、スタックを更新してもデータが残るように、Aurora クラスターは**保持（Retain）**され、削除保護も有効になります。Amplify アプリを削除してもクラスターは残ります。削除するには RDS コンソールで削除保護を無効にしてから削除してください。
 

@@ -5,7 +5,15 @@ import { api } from 'aws-blocks';
 import type { Todo } from 'aws-blocks';
 import { useEffect, useState, type FormEvent } from 'react';
 
+// Aurora runs with minCapacity: 0 (see aws-blocks/index.ts), so it auto-pauses
+// after ~5 minutes idle. The request that wakes it fails with this error while it
+// resumes; retrying a few seconds later succeeds.
+const DB_RESUMING_ERROR = 'ConnectionFailedException';
+
 function errorMessage(e: unknown) {
+  if (e instanceof Error && e.name === DB_RESUMING_ERROR) {
+    return 'The database is waking up from auto-pause. Please try again in a few seconds.';
+  }
   return e instanceof Error ? e.message : String(e);
 }
 
@@ -78,6 +86,11 @@ export default function TodoPage() {
           </li>
         ))}
       </ul>
+
+      <p className="note">
+        The database pauses when idle to save cost, so the first request after a while may fail
+        while it wakes up. Retry after a few seconds.
+      </p>
     </main>
   );
 }

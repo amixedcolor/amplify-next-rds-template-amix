@@ -4,7 +4,7 @@
 
 A minimal starter for full-stack apps on AWS that need a **relational database**:
 
-- **Frontend**: Next.js (App Router) + React, hosted on AWS Amplify Hosting
+- **Frontend**: Next.js 16 (App Router) + React 19, hosted on AWS Amplify Hosting
 - **Auth**: Amazon Cognito via Amplify Gen 2, with the Amplify UI `<Authenticator>`
 - **API + DB**: [AWS Blocks](https://github.com/aws-devtools-labs/aws-blocks): a typed RPC API on Lambda + API Gateway, backed by **Aurora Serverless v2 (PostgreSQL)**, with plain SQL migrations and the [Kysely](https://kysely.dev) query builder
 
@@ -35,7 +35,9 @@ Prerequisites: Node.js 22+, [pnpm](https://pnpm.io/installation) (version pinned
    pnpm dev
    ```
 
-> Always use `pnpm sandbox` / `pnpm sandbox:delete` rather than `pnpm exec ampx ...` directly. The scripts set `NODE_OPTIONS=--conditions=cdk`, which AWS Blocks needs during synthesis.
+> Always use `pnpm sandbox` / `pnpm sandbox:delete` rather than running `ampx` directly. The scripts set:
+> - `NODE_OPTIONS=--conditions=cdk`, which AWS Blocks needs during synthesis.
+> - `AMPLIFY_SANDBOX=true`, which marks the deployment as a sandbox. Without it, the database is deployed with production settings (retained and deletion-protected), so `sandbox:delete` can't remove it.
 
 ### Optional: run the API locally
 
@@ -50,7 +52,9 @@ pnpm dev
 ## Deploying to Amplify Hosting
 
 1. In the Amplify console, choose **Create new app** and connect your repository.
-2. Amplify picks up [`amplify.yml`](./amplify.yml), deploys the backend with `ampx pipeline-deploy`, then builds Next.js.
+2. Amplify picks up [`amplify.yml`](./amplify.yml). The build installs Node.js 22 and pnpm, then runs `pnpm db:types --verify` and `pnpm typecheck:backend`. If those pass, it deploys the backend with `ampx pipeline-deploy` and then builds Next.js.
+
+> **Next.js version**: the Amplify Hosting docs list official SSR support for Next.js 12 through 15 ([source](https://docs.aws.amazon.com/amplify/latest/userguide/ssr-amplify-support.html)). This template uses Next.js 16. If a Hosting build or SSR misbehaves, try Next.js 15.
 
 CORS is open to every branch of the app (`https://<branch>.<appId>.amplifyapp.com`). If you use a custom domain, add an Amplify environment variable `BLOCKS_ALLOWED_ORIGINS` with comma-separated regular expressions, for example `^https://app\.example\.com$`.
 
@@ -93,7 +97,10 @@ app/                    Next.js App Router pages
 
 ## Costs and cleanup
 
-- Aurora Serverless v2 runs with `minCapacity: 0`, so it auto-pauses when idle. The first query after a pause takes several seconds. For production, raise `minCapacity` in `aws-blocks/index.ts`.
+- Aurora Serverless v2 runs with `minCapacity: 0`, so it auto-pauses after about 5 minutes idle and costs nothing for compute while paused. In exchange:
+  - **First request after a pause**: it fails with `ConnectionFailedException` ("The database connection failed") while the cluster resumes. Retrying a few seconds later succeeds. The sample app shows a "try again" message in this case.
+  - **Deploys with migrations**: a deploy can fail on the first try when it runs migrations against a paused cluster, even though Blocks retries for about 2 minutes. Re-run the build (or `pnpm sandbox`) and it succeeds.
+  - **Production**: raise `minCapacity` in `aws-blocks/index.ts` (for example to `0.5`) to keep the database always on. This is billed per ACU-hour.
 - `pnpm sandbox:delete` deletes the sandbox, including its database.
 - Branch deployments **retain** the Aurora cluster and enable deletion protection, so data survives stack updates. Deleting the Amplify app does not delete the cluster. To remove it, turn off deletion protection and delete it in the RDS console.
 
