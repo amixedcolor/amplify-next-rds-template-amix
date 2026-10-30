@@ -5,7 +5,7 @@
  * with Aurora Serverless v2 (PostgreSQL) when deployed, and on a local dev
  * server with PGlite (`pnpm blocks:dev`) — same code, no changes.
  *
- * Schema: aws-blocks/migrations/*.sql (+ Kysely types in ./schema.ts)
+ * Schema: aws-blocks/migrations/*.sql → `pnpm db:types` → ./db.generated.ts
  * Blocks docs: node_modules/@aws-blocks/blocks/README.md
  * Kysely docs: https://kysely.dev
  */
@@ -14,7 +14,8 @@ import { createKyselyAdapter } from '@aws-blocks/bb-data';
 import { sql, type Selectable } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { requireUser } from './auth.js';
-import { toIsoString, type DB, type TodoTable } from './schema.js';
+import type { DB, Todos } from './db.generated.js';
+import { toIsoString } from './timestamp.js';
 
 const scope = new Scope('app');
 
@@ -45,7 +46,7 @@ export interface Todo {
 
 const todoColumns = ['id', 'content', 'done', 'created_at', 'updated_at'] as const;
 
-function toTodo(row: Pick<Selectable<TodoTable>, (typeof todoColumns)[number]>): Todo {
+function toTodo(row: Pick<Selectable<Todos>, (typeof todoColumns)[number]>): Todo {
   return {
     ...row,
     created_at: toIsoString(row.created_at),

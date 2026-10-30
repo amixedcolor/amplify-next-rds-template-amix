@@ -63,19 +63,24 @@ amplify/
   blocks.ts             Wires AWS Blocks into Amplify (CORS, Cognito config, outputs)
 aws-blocks/
   index.ts              The API (ApiNamespace) and Kysely queries
-  schema.ts             Kysely table types (mirror the migrations)
+  db.generated.ts       Kysely table types, generated from the migrations (`pnpm db:types`)
+  timestamp.ts          Timestamp type and ISO conversion
   auth.ts               Cognito ID-token verification
   migrations/*.sql      Database schema, applied in order
   amplify-client.js     Frontend client: `import { api } from 'aws-blocks'`
   index.cdk.ts          CDK entry point (called from amplify/blocks.ts)
   index.handler.ts      Lambda entry point
-  scripts/              Local dev server
+  scripts/              Local dev server, DB type generator
 app/                    Next.js App Router pages
 ```
 
 ## Customizing
 
-- **Change the schema**: add a new numbered file such as `aws-blocks/migrations/002_add_due_date.sql`, then update the matching types in `aws-blocks/schema.ts`. Don't edit migrations that have already been applied.
+- **Change the schema**:
+  1. Add a new numbered file such as `aws-blocks/migrations/002_add_due_date.sql`. Don't edit migrations that have already been applied.
+  2. Run `pnpm db:types` to regenerate `aws-blocks/db.generated.ts`, and commit both files. Never edit the generated file by hand.
+
+  `pnpm db:types --verify` fails if the generated types don't match the migrations. CI and the Amplify Hosting backend build run it (along with `pnpm typecheck:backend`) before anything is deployed.
 - **Write queries**: use the type-safe `db` (Kysely) in `aws-blocks/index.ts`. For raw SQL, use Kysely's `sql` template tag. Timestamps come back as `Date` locally but as strings on AWS (RDS Data API), so normalize them with `toIsoString()` before returning. Affected-row counts (`numDeletedRows` and so on) are not reported; use `.returning(...)` to check whether a row was hit.
 - **Add an API method**: add a method to the `api` namespace in `aws-blocks/index.ts`. The frontend gets it fully typed through `import { api } from 'aws-blocks'`. Call `requireUser(context)` in any method that needs a signed-in user.
 - **Add another namespace**: export a new `ApiNamespace` from `aws-blocks/index.ts`, and a matching client from `aws-blocks/amplify-client.js`.

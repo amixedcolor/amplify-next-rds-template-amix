@@ -63,19 +63,24 @@ amplify/
   blocks.ts             AWS Blocks を Amplify に組み込む（CORS、Cognito 設定、outputs）
 aws-blocks/
   index.ts              API（ApiNamespace）と Kysely のクエリ
-  schema.ts             Kysely 用のテーブル型（マイグレーションと内容を揃える）
+  db.generated.ts       Kysely 用のテーブル型。マイグレーションから自動生成（`pnpm db:types`）
+  timestamp.ts          タイムスタンプの型と ISO 形式への変換
   auth.ts               Cognito ID トークンの検証
   migrations/*.sql      DB スキーマ（ファイル名順に適用）
   amplify-client.js     フロントエンド用クライアント: `import { api } from 'aws-blocks'`
   index.cdk.ts          CDK エントリポイント（amplify/blocks.ts から呼び出し）
   index.handler.ts      Lambda エントリポイント
-  scripts/              ローカル dev サーバー
+  scripts/              ローカル dev サーバー、DB の型生成
 app/                    Next.js App Router のページ
 ```
 
 ## カスタマイズ
 
-- **スキーマを変更する**: `aws-blocks/migrations/002_add_due_date.sql` のように連番の新しいファイルを追加し、`aws-blocks/schema.ts` の型も合わせて更新します。適用済みのマイグレーションは編集しないでください。
+- **スキーマを変更する**:
+  1. `aws-blocks/migrations/002_add_due_date.sql` のように、連番の新しいファイルを追加します。適用済みのマイグレーションは編集しないでください。
+  2. `pnpm db:types` を実行して `aws-blocks/db.generated.ts` を再生成し、両方のファイルをコミットします。生成されたファイルは手で編集しないでください。
+
+  `pnpm db:types --verify` は、生成された型がマイグレーションと一致しないと失敗します。CI と Amplify Hosting のバックエンドビルドでは、デプロイ前にこのコマンドと `pnpm typecheck:backend` を実行します。
 - **クエリを書く**: `aws-blocks/index.ts` の型付き `db`（Kysely）を使います。生の SQL が必要なときは Kysely の `sql` タグを使います。タイムスタンプはローカルでは `Date`、AWS（RDS Data API）では文字列で返るため、API から返す前に `toIsoString()` でそろえてください。また、影響を受けた行数（`numDeletedRows` など）は取得できないので、行が存在したかどうかは `.returning(...)` で確認します。
 - **API メソッドを追加する**: `aws-blocks/index.ts` の `api` にメソッドを追加します。フロントエンドからは `import { api } from 'aws-blocks'` で型付きのまま呼び出せます。サインインが必要なメソッドでは `requireUser(context)` を呼んでください。
 - **ネームスペースを追加する**: `aws-blocks/index.ts` で新しい `ApiNamespace` を export し、対応するクライアントを `aws-blocks/amplify-client.js` から export します。
