@@ -4,16 +4,11 @@ import { useAuthenticator } from '@aws-amplify/ui-react';
 import { api } from 'aws-blocks';
 import type { Todo } from 'aws-blocks';
 import { useEffect, useState, type FormEvent } from 'react';
-
-// Aurora runs with minCapacity: 0 (see aws-blocks/index.ts), so it auto-pauses
-// after ~5 minutes idle. The request that wakes it fails with this error while it
-// resumes, which can take from several seconds to a few minutes; retrying after
-// that succeeds.
-const DB_RESUMING_ERROR = 'ConnectionFailedException';
+import { isDbResuming, retryWhileDbResumes } from './retry-while-db-resumes';
 
 function errorMessage(e: unknown) {
-  if (e instanceof Error && e.name === DB_RESUMING_ERROR) {
-    return 'The database is waking up from auto-pause. This can take up to a few minutes. Please try again shortly.';
+  if (isDbResuming(e)) {
+    return 'The database is still waking up from auto-pause. Please try again in a minute.';
   }
   return e instanceof Error ? e.message : String(e);
 }
@@ -23,17 +18,21 @@ export default function TodoPage() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [content, setContent] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [waking, setWaking] = useState(false);
 
   useEffect(() => {
-    api.listTodos().then(setTodos, (e) => setError(errorMessage(e)));
+    retryWhileDbResumes(() => api.listTodos(), setWaking).then(setTodos, (e) =>
+      setError(errorMessage(e)),
+    );
   }, []);
 
   /** Runs a mutation (or nothing, to just retry loading), then reloads the list. */
   async function run(action: () => Promise<unknown>) {
     setError(null);
     try {
-      await action();
-      setTodos(await api.listTodos());
+      // Retried separately so a successful mutation is never re-sent.
+      await retryWhileDbResumes(action, setWaking);
+      setTodos(await retryWhileDbResumes(() => api.listTodos(), setWaking));
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -68,6 +67,12 @@ export default function TodoPage() {
         <button type="submit">Add</button>
       </form>
 
+      {waking && (
+        <p role="status">
+          Waking up the database. This can take up to a few minutes; retrying automatically…
+        </p>
+      )}
+
       {error && (
         <p role="alert">
           {error}{' '}
@@ -96,8 +101,8 @@ export default function TodoPage() {
       </ul>
 
       <p className="note">
-        The database pauses when idle to save cost, so the first request after a while may fail
-        while it wakes up (this can take up to a few minutes). Retry after a short wait.
+        The database pauses when idle to save cost, so the first request after a while waits
+        for it to wake up (this can take up to a few minutes). The app retries automatically.
       </p>
     </main>
   );

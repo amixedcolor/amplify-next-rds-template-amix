@@ -31,7 +31,7 @@ const database = new Database(scope, 'db', {
   // 0 lets Aurora auto-pause after ~5 minutes idle (no compute cost). The catch:
   // - The request that wakes it fails with ConnectionFailedException while it
   //   resumes, which can take from several seconds to a few minutes (the
-  //   frontend shows a "try again" message; see app/page.tsx).
+  //   frontend retries automatically; see app/retry-while-db-resumes.ts).
   // - A deploy that runs migrations against a paused cluster can fail even though
   //   Blocks retries for ~2 minutes; re-run the build/sandbox and it succeeds.
   // Raise to 0.5+ for production to keep it always on (billed per ACU-hour).
