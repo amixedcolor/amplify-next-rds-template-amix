@@ -106,7 +106,7 @@ app/                    Next.js App Router pages
 ## Costs and cleanup
 
 - Aurora Serverless v2 runs with `minCapacity: 0`, so it auto-pauses after about 5 minutes idle and costs nothing for compute while paused. In exchange:
-  - **First request after a pause**: it fails with `ConnectionFailedException` ("The database connection failed") while the cluster resumes. Retrying a few seconds later succeeds. The sample app shows a "try again" message in this case.
+  - **First request after a pause**: it fails with `ConnectionFailedException` ("The database connection failed") while the cluster resumes. Resuming can take from several seconds to a few minutes; retrying after that succeeds. The sample app shows a "try again" message in this case.
   - **Deploys with migrations**: a deploy can fail on the first try when it runs migrations against a paused cluster, even though Blocks retries for about 2 minutes. Re-run the build (or `pnpm sandbox`) and it succeeds.
   - **Production**: raise `minCapacity` in `aws-blocks/index.ts` (for example to `0.5`) to keep the database always on. This is billed per ACU-hour.
 - `pnpm sandbox:delete` deletes the sandbox, including its database.
